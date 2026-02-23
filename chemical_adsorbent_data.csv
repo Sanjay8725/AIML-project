@@ -1,0 +1,37 @@
+Adsorbent,Metal,Dosage (g/L),Temp (°C),pH,Time (min),RPM,C0 (mg/L),Ce (mg/L),removal_percentage (%),qe (mg/g)
+Activated Carbon,Mn,0.5,25,3,30,100,50,31.0,38.0,38.0
+Activated Carbon,Mn,1.0,25,5,60,150,50,18.5,63.0,31.5
+Activated Carbon,Mn,1.5,30,6,90,200,50,10.5,79.0,26.333
+Activated Carbon,Mn,2.0,35,6,120,200,50,6.0,88.0,22.0
+Activated Carbon,Cu,0.5,25,3,30,100,50,24.0,52.0,52.0
+Activated Carbon,Cu,1.0,25,5,60,150,50,11.0,78.0,39.0
+Activated Carbon,Cu,1.5,30,6,90,200,50,4.5,91.0,30.333
+Activated Carbon,Cu,2.0,35,6,120,200,50,2.0,96.0,24.0
+Activated Carbon,Pb,0.5,25,3,30,100,50,19.5,61.0,61.0
+Activated Carbon,Pb,1.0,25,5,60,150,50,7.0,86.0,43.0
+Activated Carbon,Pb,1.5,30,6,90,200,50,1.5,97.0,32.333
+Activated Carbon,Pb,2.0,35,6,120,200,50,0.5,99.0,24.75
+Biochar,Mn,0.5,25,3,30,100,50,35.0,30.0,30.0
+Biochar,Mn,1.0,25,5,60,150,50,23.0,54.0,27.0
+Biochar,Mn,1.5,30,6,90,200,50,15.0,70.0,23.333
+Biochar,Mn,2.0,35,6,120,200,50,10.0,80.0,20.0
+Biochar,Cu,0.5,25,3,30,100,50,27.5,45.0,45.0
+Biochar,Cu,1.0,25,5,60,150,50,15.5,69.0,34.5
+Biochar,Cu,1.5,30,6,90,200,50,8.5,83.0,27.667
+Biochar,Cu,2.0,35,6,120,200,50,5.0,90.0,22.5
+Biochar,Pb,0.5,25,3,30,100,50,22.5,55.0,55.0
+Biochar,Pb,1.0,25,5,60,150,50,10.0,80.0,40.0
+Biochar,Pb,1.5,30,6,90,200,50,4.0,92.0,30.667
+Biochar,Pb,2.0,35,6,120,200,50,2.0,96.0,24.0
+Chitosan composite,Mn,0.5,25,3,30,100,50,29.0,42.0,42.0
+Chitosan composite,Mn,1.0,25,5,60,150,50,16.0,68.0,34.0
+Chitosan composite,Mn,1.5,30,6,90,200,50,8.5,83.0,27.667
+Chitosan composite,Mn,2.0,35,6,120,200,50,4.5,91.0,22.75
+Chitosan composite,Cu,0.5,25,3,30,100,50,20.0,60.0,60.0
+Chitosan composite,Cu,1.0,25,5,60,150,50,7.5,85.0,42.5
+Chitosan composite,Cu,1.5,30,6,90,200,50,2.5,95.0,31.667
+Chitosan composite,Cu,2.0,35,6,120,200,50,1.0,98.0,24.5
+Chitosan composite,Pb,0.5,25,3,30,100,50,15.0,70.0,70.0
+Chitosan composite,Pb,1.0,25,5,60,150,50,4.0,92.0,46.0
+Chitosan composite,Pb,1.5,30,6,90,200,50,1.0,98.0,32.667
+Chitosan composite,Pb,2.0,35,6,120,200,50,0.25,99.5,24.875
