@@ -20,6 +20,15 @@ import seaborn as sns
 # Set random seed for reproducibility
 np.random.seed(42)
 
+# Business rule: removal/error percentages must not exceed 99.0
+MAX_PERCENT = 99.0
+PERCENT_DECIMALS = 1
+
+
+def clamp_percent(values):
+    """Clip percentages to [0, MAX_PERCENT] and round to configured decimals."""
+    return np.round(np.clip(values, 0, MAX_PERCENT), PERCENT_DECIMALS)
+
 print("=" * 60)
 print("Chemical Adsorbent Prediction System")
 print("=" * 60)
@@ -140,6 +149,13 @@ print("\n[7] Making predictions...")
 y_train_pred = model.predict(X_train)
 y_test_pred = model.predict(X_test)
 
+# Clip predictions to valid range [0, 99.0] for removal percentage
+print(f"\n[7a] Clipping predictions to valid range (0-{MAX_PERCENT:.1f}%)...")
+y_train_pred = clamp_percent(y_train_pred)
+y_test_pred = clamp_percent(y_test_pred)
+print(f"  Training predictions range: {y_train_pred.min():.2f}% - {y_train_pred.max():.2f}%")
+print(f"  Testing predictions range: {y_test_pred.min():.2f}% - {y_test_pred.max():.2f}%")
+
 # Evaluate model performance
 print("\n[8] Model Performance:")
 print("\nTraining Set Metrics:")
@@ -174,15 +190,85 @@ sample_predictions = pd.DataFrame({
 print(sample_predictions)
 
 # Full predictions for all rows (same structure as input with extra columns)
-print("\n[9b] Building full prediction output...")
+print("\n[9b] Building full prediction output for all metal combinations...")
 all_predictions = X.copy()
 all_predictions['actual_removal_percentage (%)'] = y.values
-all_predictions['predicted_removal_percentage (%)'] = model.predict(X)
+# Clip predictions to valid range [0, 99.0]
+raw_predictions = model.predict(X)
+all_predictions['predicted_removal_percentage (%)'] = clamp_percent(raw_predictions)
 all_predictions['error (%)'] = (
     all_predictions['actual_removal_percentage (%)'] -
     all_predictions['predicted_removal_percentage (%)']
 )
-all_predictions['absolute_error (%)'] = np.abs(all_predictions['error (%)'])
+# Round and cap errors at 99.0%
+all_predictions['error (%)'] = np.round(all_predictions['error (%)'], PERCENT_DECIMALS)
+all_predictions['absolute_error (%)'] = np.round(
+    np.minimum(np.abs(all_predictions['error (%)']), MAX_PERCENT),
+    PERCENT_DECIMALS,
+)
+
+print(f"  Total predictions: {len(all_predictions)}")
+if 'Metal' in all_predictions.columns:
+    print(f"  Unique metals in predictions: {all_predictions['Metal'].unique()}")
+if 'Adsorbent' in all_predictions.columns:
+    print(f"  Unique adsorbents: {all_predictions['Adsorbent'].unique()}")
+print(f"  Predicted range: {all_predictions['predicted_removal_percentage (%)'].min():.2f}% - {all_predictions['predicted_removal_percentage (%)'].max():.2f}%")
+print(f"  Max absolute error: {all_predictions['absolute_error (%)'].max():.2f}%")
+
+# Generate predictions for all adsorbent-metal combinations
+print("\n[9c] Generating predictions for all adsorbent-metal combinations...")
+
+# Define target metals for prediction (specified metals)
+target_metals = ['Pb', 'Cd', 'Hg', 'As', 'Cr', 'Cu', 'Ni', 'Zn']
+print(f"  Target metals: {', '.join(target_metals)}")
+
+# Get unique adsorbents from the dataset
+adsorbents = sorted(df['Adsorbent'].unique().tolist())
+print(f"  Adsorbents: {', '.join(adsorbents)}")
+
+# Create template from the dataset (use representative parameter values)
+# Get common parameter combinations from the dataset
+parameter_sets = df[['Dosage (g/L)', 'Temp (°C)', 'pH', 'Time (min)', 'RPM', 'C0 (mg/L)']].drop_duplicates()
+
+# Generate all combinations
+metal_combinations = []
+for adsorbent in adsorbents:
+    for metal in target_metals:
+        for _, params in parameter_sets.iterrows():
+            combination = {
+                'Adsorbent': adsorbent,
+                'Metal': metal,
+                'Dosage (g/L)': params['Dosage (g/L)'],
+                'Temp (°C)': params['Temp (°C)'],
+                'pH': params['pH'],
+                'Time (min)': params['Time (min)'],
+                'RPM': params['RPM'],
+                'C0 (mg/L)': params['C0 (mg/L)']
+            }
+            metal_combinations.append(combination)
+
+# Create DataFrame with all combinations
+metal_predictions_df = pd.DataFrame(metal_combinations)
+
+# Make predictions for all combinations
+print(f"  Generating {len(metal_predictions_df)} predictions...")
+raw_metal_predictions = model.predict(metal_predictions_df)
+# Clip predictions to valid range [0, 99.0]
+metal_predictions_df['predicted_removal_percentage (%)'] = clamp_percent(raw_metal_predictions)
+
+# For these predictions, we don't have actual values, so we note them as synthetic
+metal_predictions_df['prediction_type'] = 'Synthetic (All Metal Combinations)'
+
+print(f"  ✓ Generated predictions for {len(target_metals)} metals × {len(adsorbents)} adsorbents")
+print(f"  ✓ Total combinations: {len(metal_predictions_df)}")
+print(f"  ✓ Predicted range: {metal_predictions_df['predicted_removal_percentage (%)'].min():.2f}% - {metal_predictions_df['predicted_removal_percentage (%)'].max():.2f}%")
+
+# Show summary by metal
+print("\n  Metal-wise prediction summary:")
+for metal in target_metals:
+    metal_data = metal_predictions_df[metal_predictions_df['Metal'] == metal]
+    print(f"    {metal:>3} - Mean: {metal_data['predicted_removal_percentage (%)'].mean():.1f}%, "
+          f"Range: {metal_data['predicted_removal_percentage (%)'].min():.1f}%-{metal_data['predicted_removal_percentage (%)'].max():.1f}%")
 
 # Visualizations
 print("\n[10] Creating visualizations...")
@@ -306,7 +392,8 @@ print("\nInput features:")
 print(custom_input)
 
 custom_prediction = model.predict(custom_input)
-print(f"\nPredicted Removal Percentage: {custom_prediction[0]:.2f}%")
+custom_prediction = clamp_percent(custom_prediction)
+print(f"\nPredicted Removal Percentage: {custom_prediction[0]:.1f}%")
 
 # Save model (optional)
 print("\n[12] Saving model...")
@@ -323,6 +410,11 @@ print("Dataset saved as 'chemical_adsorbent_data.csv'")
 # Save full predictions to CSV
 all_predictions.to_csv('chemical_adsorbent_predictions.csv', index=False)
 print("Predictions saved as 'chemical_adsorbent_predictions.csv'")
+
+# Save metal combinations predictions to CSV
+metal_predictions_df.to_csv('metal_combinations_predictions.csv', index=False)
+print("Metal combinations predictions saved as 'metal_combinations_predictions.csv'")
+print(f"  ✓ Contains predictions for {len(target_metals)} metals: {', '.join(target_metals)}")
 
 def generate_excel_report(excel_path):
     from openpyxl import load_workbook
@@ -342,12 +434,19 @@ def generate_excel_report(excel_path):
         test_results = X_test.copy()
         test_results['actual_removal_percentage (%)'] = y_test.values
         test_results['predicted_removal_percentage (%)'] = y_test_pred
-        test_results['error (%)'] = y_test.values - y_test_pred
-        test_results['absolute_error (%)'] = np.abs(test_results['error (%)'])
+        test_results['error (%)'] = np.round(y_test.values - y_test_pred, PERCENT_DECIMALS)
+        # Cap absolute error at 99.0% (business rule)
+        test_results['absolute_error (%)'] = np.round(
+            np.minimum(np.abs(test_results['error (%)']), MAX_PERCENT),
+            PERCENT_DECIMALS,
+        )
         test_results.to_excel(writer, sheet_name='Testing & Predictions', index=False)
 
         # Sheet 3b: All Predictions (same as input with predictions)
         all_predictions.to_excel(writer, sheet_name='All Predictions', index=False)
+
+        # Sheet 3c: Metal Combinations Predictions (auto from dataset)
+        metal_predictions_df.to_excel(writer, sheet_name='Metal Combinations', index=False)
 
         # Sheet 4: Model Performance Metrics
         metrics_data = {
@@ -445,7 +544,7 @@ def generate_excel_report(excel_path):
     ws_summary['A4'] = 'Algorithm:'
     ws_summary['B4'] = 'Linear Regression'
     ws_summary['A5'] = 'Date:'
-    ws_summary['B5'] = 'February 23, 2026'
+    ws_summary['B5'] = 'March 7, 2026'
     ws_summary['A6'] = 'Total Samples:'
     ws_summary['B6'] = len(df)
     ws_summary['A7'] = 'Training Samples:'
@@ -471,8 +570,14 @@ def generate_excel_report(excel_path):
     ws_summary['A22'].font = Font(size=14, bold=True)
     ws_summary['A23'] = 'Removal Percentage (%)'
 
+    ws_summary['A25'] = 'Metal Combinations Predicted'
+    ws_summary['A25'].font = Font(size=14, bold=True)
+    ws_summary['A26'] = f"Metals: {', '.join(target_metals)}"
+    ws_summary['A27'] = f'Total Combinations: {len(metal_predictions_df)}'
+    ws_summary['A28'] = 'Note: Predicted removal/error capped at 0-99.0%'
+
     # Set column widths for summary
-    ws_summary.column_dimensions['A'].width = 30
+    ws_summary.column_dimensions['A'].width = 35
     ws_summary.column_dimensions['B'].width = 20
 
     wb.save(excel_path)
@@ -493,12 +598,13 @@ print("  - Sheet 2: Visualizations (with embedded graphs)")
 print("  - Sheet 3: Dataset")
 print("  - Sheet 4: Training Data")
 print("  - Sheet 5: Testing & Predictions")
-print("  - Sheet 6: Model Metrics")
-print("  - Sheet 7: Coefficients")
-print("  - Sheet 8: Statistical Summary")
-print("  - Sheet 9: Correlation Matrix")
-print("  - Sheet 10: Graph Analysis")
-print("  - Sheet 11: All Predictions")
+print("  - Sheet 6: All Predictions")
+print("  - Sheet 7: Metal Combinations (all adsorbent-metal combinations)")
+print("  - Sheet 8: Model Metrics")
+print("  - Sheet 9: Coefficients")
+print("  - Sheet 10: Statistical Summary")
+print("  - Sheet 11: Correlation Matrix")
+print("  - Sheet 12: Graph Analysis")
 
 print("\n" + "=" * 60)
 print("Analysis Complete!")
@@ -508,3 +614,229 @@ print(f"📈 Visualizations: chemical_adsorbent_analysis.png")
 print(f"💾 Model File: linear_regression_model.pkl")
 print(f"📄 CSV Data: chemical_adsorbent_data.csv")
 print("📄 CSV Predictions: chemical_adsorbent_predictions.csv")
+print("📄 CSV Metal Combinations: metal_combinations_predictions.csv")
+
+# Create detailed graphs for All Predictions sheet
+print("\n[14] Creating detailed graphs for All Predictions...")
+
+# Read the All Predictions sheet from the Excel file
+predictions_df = pd.read_excel(excel_file, sheet_name='All Predictions')
+
+# Create comprehensive visualizations
+fig = plt.figure(figsize=(20, 14))
+
+# 1. Actual vs Predicted Scatter Plot
+plt.subplot(3, 4, 1)
+plt.scatter(predictions_df['actual_removal_percentage (%)'], 
+            predictions_df['predicted_removal_percentage (%)'], 
+            alpha=0.6, s=50, c=predictions_df['absolute_error (%)'], cmap='RdYlGn_r')
+plt.plot([predictions_df['actual_removal_percentage (%)'].min(), 
+          predictions_df['actual_removal_percentage (%)'].max()], 
+         [predictions_df['actual_removal_percentage (%)'].min(), 
+          predictions_df['actual_removal_percentage (%)'].max()], 
+         'r--', lw=2, label='Perfect Prediction')
+plt.xlabel('Actual Removal %', fontsize=11)
+plt.ylabel('Predicted Removal %', fontsize=11)
+plt.title('Actual vs Predicted (All Data)', fontsize=12, fontweight='bold')
+plt.colorbar(label='Absolute Error (%)')
+plt.legend()
+plt.grid(True, alpha=0.3)
+
+# 2. Error Distribution
+plt.subplot(3, 4, 2)
+plt.hist(predictions_df['error (%)'], bins=40, color='steelblue', alpha=0.7, edgecolor='black')
+plt.axvline(x=0, color='red', linestyle='--', linewidth=2, label='Zero Error')
+plt.xlabel('Error (%)', fontsize=11)
+plt.ylabel('Frequency', fontsize=11)
+plt.title('Prediction Error Distribution', fontsize=12, fontweight='bold')
+plt.legend()
+plt.grid(True, alpha=0.3)
+
+# 3. Absolute Error Distribution
+plt.subplot(3, 4, 3)
+plt.hist(predictions_df['absolute_error (%)'], bins=40, color='coral', alpha=0.7, edgecolor='black')
+plt.xlabel('Absolute Error (%)', fontsize=11)
+plt.ylabel('Frequency', fontsize=11)
+plt.title('Absolute Error Distribution', fontsize=12, fontweight='bold')
+plt.grid(True, alpha=0.3)
+
+# 4. Box Plot - Actual vs Predicted
+plt.subplot(3, 4, 4)
+plt.boxplot([predictions_df['actual_removal_percentage (%)'], 
+             predictions_df['predicted_removal_percentage (%)']], 
+            labels=['Actual', 'Predicted'], patch_artist=True,
+            boxprops=dict(facecolor='lightblue', color='blue'),
+            medianprops=dict(color='red', linewidth=2))
+plt.ylabel('Removal Percentage (%)', fontsize=11)
+plt.title('Actual vs Predicted - Box Plot', fontsize=12, fontweight='bold')
+plt.grid(True, alpha=0.3, axis='y')
+
+# 5. Residual Plot
+plt.subplot(3, 4, 5)
+plt.scatter(predictions_df['predicted_removal_percentage (%)'], 
+            predictions_df['error (%)'], 
+            alpha=0.6, color='purple', s=50)
+plt.axhline(y=0, color='red', linestyle='--', linewidth=2)
+plt.xlabel('Predicted Removal %', fontsize=11)
+plt.ylabel('Residual Error (%)', fontsize=11)
+plt.title('Residual Plot', fontsize=12, fontweight='bold')
+plt.grid(True, alpha=0.3)
+
+# 6. Cumulative Error Plot
+plt.subplot(3, 4, 6)
+sorted_abs_error = np.sort(predictions_df['absolute_error (%)'])
+cumulative_pct = np.arange(1, len(sorted_abs_error) + 1) / len(sorted_abs_error) * 100
+plt.plot(sorted_abs_error, cumulative_pct, linewidth=2, color='darkgreen')
+plt.xlabel('Absolute Error (%)', fontsize=11)
+plt.ylabel('Cumulative Percentage', fontsize=11)
+plt.title('Cumulative Error Distribution', fontsize=12, fontweight='bold')
+plt.grid(True, alpha=0.3)
+
+# 7. Top 20 Predictions Comparison
+plt.subplot(3, 4, 7)
+n_samples = min(20, len(predictions_df))
+indices = range(n_samples)
+width = 0.35
+plt.bar([i - width/2 for i in indices], 
+        predictions_df['actual_removal_percentage (%)'].iloc[:n_samples], 
+        width, label='Actual', alpha=0.8, color='blue')
+plt.bar([i + width/2 for i in indices], 
+        predictions_df['predicted_removal_percentage (%)'].iloc[:n_samples], 
+        width, label='Predicted', alpha=0.8, color='orange')
+plt.xlabel('Sample Index', fontsize=11)
+plt.ylabel('Removal Percentage (%)', fontsize=11)
+plt.title(f'First {n_samples} Predictions Comparison', fontsize=12, fontweight='bold')
+plt.legend()
+plt.xticks(indices, [str(i) for i in indices], rotation=45)
+plt.grid(True, alpha=0.3, axis='y')
+
+# 8. Error by Actual Value
+plt.subplot(3, 4, 8)
+plt.scatter(predictions_df['actual_removal_percentage (%)'], 
+            predictions_df['absolute_error (%)'], 
+            alpha=0.6, color='crimson', s=50)
+plt.xlabel('Actual Removal %', fontsize=11)
+plt.ylabel('Absolute Error (%)', fontsize=11)
+plt.title('Error by Actual Value', fontsize=12, fontweight='bold')
+plt.grid(True, alpha=0.3)
+
+# 9. Q-Q Plot for Errors
+plt.subplot(3, 4, 9)
+from scipy import stats
+stats.probplot(predictions_df['error (%)'], dist="norm", plot=plt)
+plt.title('Q-Q Plot (Error Normality)', fontsize=12, fontweight='bold')
+plt.grid(True, alpha=0.3)
+
+# 10. Line Plot - First 50 samples
+plt.subplot(3, 4, 10)
+n_line = min(50, len(predictions_df))
+x_line = range(n_line)
+plt.plot(x_line, predictions_df['actual_removal_percentage (%)'].iloc[:n_line], 
+         'o-', label='Actual', linewidth=2, markersize=6, color='blue')
+plt.plot(x_line, predictions_df['predicted_removal_percentage (%)'].iloc[:n_line], 
+         's-', label='Predicted', linewidth=2, markersize=5, color='orange')
+plt.xlabel('Sample Index', fontsize=11)
+plt.ylabel('Removal Percentage (%)', fontsize=11)
+plt.title(f'Trend Comparison (First {n_line} Samples)', fontsize=12, fontweight='bold')
+plt.legend()
+plt.grid(True, alpha=0.3)
+
+# 11. Percentage Error Distribution
+plt.subplot(3, 4, 11)
+percentage_error = (predictions_df['error (%)'] / predictions_df['actual_removal_percentage (%)']) * 100
+percentage_error = percentage_error.replace([np.inf, -np.inf], np.nan).dropna()
+percentage_error = np.clip(percentage_error, -MAX_PERCENT, MAX_PERCENT)
+plt.hist(percentage_error, bins=40, color='teal', alpha=0.7, edgecolor='black')
+plt.xlabel('Percentage Error (%)', fontsize=11)
+plt.ylabel('Frequency', fontsize=11)
+plt.title('Relative Error Distribution', fontsize=12, fontweight='bold')
+plt.grid(True, alpha=0.3)
+
+# 12. Statistical Summary Text
+plt.subplot(3, 4, 12)
+plt.axis('off')
+stats_text = f"""
+Prediction Statistics:
+
+Total Predictions: {len(predictions_df)}
+
+Actual Range: {predictions_df['actual_removal_percentage (%)'].min():.2f} - {predictions_df['actual_removal_percentage (%)'].max():.2f}%
+
+Predicted Range: {predictions_df['predicted_removal_percentage (%)'].min():.2f} - {predictions_df['predicted_removal_percentage (%)'].max():.2f}%
+
+Mean Absolute Error: {predictions_df['absolute_error (%)'].mean():.3f}%
+
+Median Abs Error: {predictions_df['absolute_error (%)'].median():.3f}%
+
+Max Abs Error: {predictions_df['absolute_error (%)'].max():.3f}%
+
+RMSE: {np.sqrt(np.mean(predictions_df['error (%)']**2)):.3f}%
+
+R² Score: {r2_score(predictions_df['actual_removal_percentage (%)'], predictions_df['predicted_removal_percentage (%)']):.4f}
+"""
+plt.text(0.1, 0.5, stats_text, fontsize=11, family='monospace', 
+         verticalalignment='center', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+plt.title('Statistical Summary', fontsize=12, fontweight='bold')
+
+plt.tight_layout()
+plt.savefig('all_predictions_graphs.png', dpi=300, bbox_inches='tight')
+print("All Predictions graphs saved as 'all_predictions_graphs.png'")
+plt.close()
+
+# Create individual detailed graphs for better visibility
+# Graph 1: Large Actual vs Predicted
+fig1, ax1 = plt.subplots(figsize=(12, 10))
+scatter = ax1.scatter(predictions_df['actual_removal_percentage (%)'], 
+                      predictions_df['predicted_removal_percentage (%)'], 
+                      alpha=0.6, s=100, c=predictions_df['absolute_error (%)'], 
+                      cmap='RdYlGn_r', edgecolors='black', linewidth=0.5)
+ax1.plot([predictions_df['actual_removal_percentage (%)'].min(), 
+          predictions_df['actual_removal_percentage (%)'].max()], 
+         [predictions_df['actual_removal_percentage (%)'].min(), 
+          predictions_df['actual_removal_percentage (%)'].max()], 
+         'r--', lw=3, label='Perfect Prediction Line')
+ax1.set_xlabel('Actual Removal Percentage (%)', fontsize=14, fontweight='bold')
+ax1.set_ylabel('Predicted Removal Percentage (%)', fontsize=14, fontweight='bold')
+ax1.set_title('Detailed: Actual vs Predicted Removal Percentage\n(All Predictions)', 
+              fontsize=16, fontweight='bold', pad=20)
+cbar = plt.colorbar(scatter, ax=ax1)
+cbar.set_label('Absolute Error (%)', fontsize=12, fontweight='bold')
+ax1.legend(fontsize=12)
+ax1.grid(True, alpha=0.3, linestyle='--')
+plt.tight_layout()
+plt.savefig('prediction_scatter_detailed.png', dpi=300, bbox_inches='tight')
+print("Detailed scatter plot saved as 'prediction_scatter_detailed.png'")
+plt.close()
+
+# Graph 2: Large Bar Comparison (top 30 samples)
+fig2, ax2 = plt.subplots(figsize=(16, 8))
+n_bars = min(30, len(predictions_df))
+indices = range(n_bars)
+width = 0.35
+bars1 = ax2.bar([i - width/2 for i in indices], 
+                predictions_df['actual_removal_percentage (%)'].iloc[:n_bars], 
+                width, label='Actual', alpha=0.8, color='royalblue', edgecolor='black')
+bars2 = ax2.bar([i + width/2 for i in indices], 
+                predictions_df['predicted_removal_percentage (%)'].iloc[:n_bars], 
+                width, label='Predicted', alpha=0.8, color='darkorange', edgecolor='black')
+ax2.set_xlabel('Sample Index', fontsize=14, fontweight='bold')
+ax2.set_ylabel('Removal Percentage (%)', fontsize=14, fontweight='bold')
+ax2.set_title(f'Detailed: Actual vs Predicted Values (First {n_bars} Samples)', 
+              fontsize=16, fontweight='bold', pad=20)
+ax2.legend(fontsize=12, loc='best')
+ax2.set_xticks(indices)
+ax2.set_xticklabels([str(i) for i in indices], rotation=45)
+ax2.grid(True, alpha=0.3, axis='y', linestyle='--')
+plt.tight_layout()
+plt.savefig('prediction_bars_detailed.png', dpi=300, bbox_inches='tight')
+print("Detailed bar chart saved as 'prediction_bars_detailed.png'")
+plt.close()
+
+print("\n✓ Created 3 graph files for All Predictions:")
+print("  1. all_predictions_graphs.png (12 subplots overview)")
+print("  2. prediction_scatter_detailed.png (detailed scatter plot)")
+print("  3. prediction_bars_detailed.png (detailed bar comparison)")
+
+print("\n" + "=" * 60)
+print("All Visualizations Complete!")
+print("=" * 60)
