@@ -11,8 +11,19 @@ from openpyxl import load_workbook
 from openpyxl.drawing.image import Image
 import os
 
-# Specify the Excel file
-excel_file = 'chemical_adsorbent_report_20260223_122015.xlsx'
+# Resolve the Excel file that already exists in this workspace.
+report_candidates = [
+  'chemical_adsorbent_report.xlsx',
+  'chemical_adsorbent_report_20260223_122015.xlsx',
+]
+for candidate in report_candidates:
+  if os.path.exists(candidate):
+    excel_file = candidate
+    break
+else:
+  raise FileNotFoundError(
+    f"No report workbook found. Looked for: {', '.join(report_candidates)}"
+  )
 
 print("=" * 60)
 print("Creating Graphs for All Predictions Sheet")
